@@ -328,6 +328,102 @@ def _list_skills_from_hermes_cli() -> list[dict[str, Any]]:
     return result
 
 
+def _find_skill_md(skill_name: str) -> Path | None:
+    """Find SKILL.md for a skill by name in the skills directory."""
+    skills_dir = _hermes_home() / "skills"
+    if not skills_dir.exists():
+        return None
+    for skill_md in skills_dir.rglob("SKILL.md"):
+        if any(part in _EXCLUDED_SKILL_DIRS for part in skill_md.parts):
+            continue
+        try:
+            text = skill_md.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        meta, _ = _parse_frontmatter(text)
+        name = str(meta.get("name") or skill_md.parent.name).strip()
+        if name == skill_name:
+            return skill_md
+    return None
+
+
+def _enrich_skill_from_fs(skill: dict) -> None:
+    """Enrich a CLI-sourced skill dict with filesystem SKILL.md metadata."""
+    name = skill.get("name") or ""
+    if not name:
+        return
+    skill_md = _find_skill_md(name)
+    if not skill_md:
+        return
+    try:
+        text = skill_md.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return
+    meta, body = _parse_frontmatter(text)
+    if not skill.get("description"):
+        desc = str(meta.get("description") or "").strip()
+        if not desc:
+            for line in body.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    desc = line[:140]
+                    break
+        skill["description"] = desc
+    if not skill.get("version"):
+        skill["version"] = str(meta.get("version") or "")
+    if not skill.get("author"):
+        skill["author"] = str(meta.get("author") or "")
+    tags_raw = meta.get("tags") or meta.get("metadata", {}).get("hermes", {}).get("tags") or []
+    if isinstance(tags_raw, str):
+        tags_raw = [t.strip() for t in tags_raw.split(",") if t.strip()]
+    skill["tags"] = list(tags_raw) if isinstance(tags_raw, list) else []
+    skill["prerequisites"] = meta.get("prerequisites") or {}
+    skill["platforms"] = meta.get("platforms") or []
+    skill["skill_md_path"] = str(skill_md)
+    skill["path"] = str(skill_md.parent)
+
+
+def get_skill_content(skill_name: str) -> dict[str, Any] | None:
+    """Return full SKILL.md content and parsed frontmatter for a skill."""
+    skill_md = _find_skill_md(skill_name)
+    if not skill_md:
+        return None
+    try:
+        text = skill_md.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+    meta, body = _parse_frontmatter(text)
+    return {
+        "name": skill_name,
+        "frontmatter": meta,
+        "content": text,
+        "body": body,
+        "path": str(skill_md),
+    }
+
+
+def toggle_skill_disabled(skill_name: str, disabled: bool) -> dict[str, Any]:
+    """Enable or disable a skill by updating config.yaml's skills.disabled list."""
+    cfg = _load_config()
+    skills_cfg = cfg.get("skills")
+    if not isinstance(skills_cfg, dict):
+        skills_cfg = {}
+        cfg["skills"] = skills_cfg
+    disabled_list = list(skills_cfg.get("disabled") or [])
+
+    if disabled and skill_name not in disabled_list:
+        disabled_list.append(skill_name)
+    elif not disabled and skill_name in disabled_list:
+        disabled_list.remove(skill_name)
+
+    skills_cfg["disabled"] = disabled_list
+    cfg["skills"] = skills_cfg
+
+    p = _hermes_home() / "config.yaml"
+    p.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    return {"ok": True, "disabled": disabled_list}
+
+
 def list_configured_skills(platform: str = "cli") -> list[dict[str, Any]]:
     cfg = _load_config()
     disabled = _get_disabled_skill_names(cfg, platform=platform)
@@ -337,10 +433,11 @@ def list_configured_skills(platform: str = "cli") -> list[dict[str, Any]]:
     if from_cli:
         rows = []
         for row in from_cli:
-            if row.get("name") in disabled:
-                continue
             cloned = dict(row)
             cloned["platform"] = platform
+            cloned["disabled"] = row.get("name") in disabled
+            # Enrich from filesystem SKILL.md if available
+            _enrich_skill_from_fs(cloned)
             rows.append(cloned)
         rows.sort(key=lambda s: (s.get("category", ""), s.get("name", "")))
         return rows
@@ -363,7 +460,7 @@ def list_configured_skills(platform: str = "cli") -> list[dict[str, Any]]:
             continue
 
         name = str(meta.get("name") or skill_md.parent.name).strip()
-        if not name or name in disabled:
+        if not name:
             continue
 
         description = str(meta.get("description") or "").strip()
@@ -376,6 +473,10 @@ def list_configured_skills(platform: str = "cli") -> list[dict[str, Any]]:
 
         rel = skill_md.relative_to(skills_dir)
         category = str(rel.parent.parent) if len(rel.parts) > 2 else str(rel.parent)
+        tags_raw = meta.get("tags") or meta.get("metadata", {}).get("hermes", {}).get("tags") or []
+        if isinstance(tags_raw, str):
+            tags_raw = [t.strip() for t in tags_raw.split(",") if t.strip()]
+        prereqs = meta.get("prerequisites") or {}
         result.append({
             "name": name,
             "description": description,
@@ -385,6 +486,10 @@ def list_configured_skills(platform: str = "cli") -> list[dict[str, Any]]:
             "path": str(skill_md.parent),
             "skill_md_path": str(skill_md),
             "platform": platform,
+            "disabled": name in disabled,
+            "tags": list(tags_raw) if isinstance(tags_raw, list) else [],
+            "prerequisites": prereqs if isinstance(prereqs, dict) else {},
+            "platforms": meta.get("platforms") or [],
         })
 
     result.sort(key=lambda s: (s.get("category", ""), s.get("name", "")))

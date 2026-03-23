@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { marked } from 'marked'
+import { useToolMeta, toolEmoji } from '../lib/toolMeta.js'
 
 const ROLE_STYLES = {
   system:    { label: 'SYS',  color: '#71717a' },
@@ -14,6 +15,7 @@ const ROLE_STYLES = {
 }
 
 export default function ConversationPanel({ sessionId, turns = [], selectedTurn, onSelectTurn }) {
+  const toolMeta = useToolMeta()
   const [messages, setMessages] = useState([])
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [expandedTurns, setExpandedTurns] = useState(new Set())
@@ -45,27 +47,43 @@ export default function ConversationPanel({ sessionId, turns = [], selectedTurn,
     else setExpandedTurns(new Set())
   }
 
-  // Messages that fall before the first turn
-  const preTurnMessages = useMemo(() => {
-    if (!turns.length) return messages
-    const first = Math.min(...turns.map(t => t.started_at || Infinity))
-    return messages.filter(m => !m.timestamp || m.timestamp < first - 0.5)
+  // Messages grouped by turn via exact ID matching
+  const { preTurnMessages, msgsByTurn } = useMemo(() => {
+    // turn_id → turn index (matches assistant message that spawned the turn)
+    const byTurnId = new Map(turns.map((t, i) => [t._turn_id, i]))
+
+    // call_id → turn index (matches tool result messages)
+    const byCallId = new Map()
+    turns.forEach((t, i) => {
+      for (const sub of t._subcalls || []) {
+        if (sub.call_id) byCallId.set(sub.call_id, i)
+      }
+    })
+
+    const groups = turns.map(() => [])
+    const unmatched = []
+
+    for (const msg of messages) {
+      if (msg.role === 'assistant' && msg.id != null) {
+        const idx = byTurnId.get(msg.id)
+        if (idx !== undefined) { groups[idx].push(msg); continue }
+      } else if (msg.role === 'tool' && msg.tool_call_id) {
+        const idx = byCallId.get(msg.tool_call_id)
+        if (idx !== undefined) { groups[idx].push(msg); continue }
+      }
+      unmatched.push(msg)
+    }
+
+    return { preTurnMessages: unmatched, msgsByTurn: groups }
   }, [messages, turns])
 
-  // Messages grouped by turn index
-  const msgsByTurn = useMemo(() => {
-    const groups = turns.map(() => [])
-    for (const msg of messages) {
-      if (!msg.timestamp) continue
-      for (let i = turns.length - 1; i >= 0; i--) {
-        if (msg.timestamp >= (turns[i].started_at || 0) - 0.5) {
-          groups[i].push(msg)
-          break
-        }
-      }
-    }
-    return groups
-  }, [messages, turns])
+  // Interleave unmatched messages and turns by timestamp so the timeline
+  // reflects actual execution order (tools appear before the final AI response)
+  const timeline = useMemo(() => {
+    const items = preTurnMessages.map(msg => ({ type: 'msg', msg, ts: msg.timestamp || 0 }))
+    turns.forEach((turn, idx) => items.push({ type: 'turn', turn, idx, ts: turn.started_at || 0 }))
+    return items.sort((a, b) => a.ts - b.ts)
+  }, [preTurnMessages, turns])
 
   if (!sessionId) {
     return (
@@ -98,13 +116,13 @@ export default function ConversationPanel({ sessionId, turns = [], selectedTurn,
 
       {/* Body */}
       <div className="flex-1 overflow-auto p-2 space-y-px">
-        {/* Pre-turn messages (system prompt etc.) */}
-        {preTurnMessages.map((msg, i) => (
-          <MessageRow key={`pre-${i}`} msg={msg} nested={false} />
-        ))}
+        {/* Interleaved timeline: messages and turns sorted by timestamp */}
+        {timeline.map((item, i) => {
+          if (item.type === 'msg') {
+            return <MessageRow key={`msg-${i}`} msg={item.msg} nested={false} />
+          }
 
-        {/* Turns */}
-        {turns.map((turn, idx) => {
+          const { turn, idx } = item
           const isSelected = selectedTurn &&
             selectedTurn.started_at === turn.started_at &&
             selectedTurn._tool_count === turn._tool_count
@@ -113,10 +131,11 @@ export default function ConversationPanel({ sessionId, turns = [], selectedTurn,
           const tools = [...new Set(subcalls.map(t => t.tool_name).filter(Boolean))]
           const dur = fmtTurnDur(turn)
           const turnMsgs = msgsByTurn[idx] || []
+          const preview = subcalls.find(s => s.preview)?.preview || null
+          const emojis = [...new Set(tools.map(t => toolEmoji(t, toolMeta)))]
 
           return (
             <div key={`turn-${idx}`} className="space-y-px">
-              {/* Turn header */}
               <button
                 onClick={() => { onSelectTurn(turn); toggleTurn(idx) }}
                 className="w-full text-left rounded border px-2.5 py-2 transition-colors"
@@ -128,10 +147,20 @@ export default function ConversationPanel({ sessionId, turns = [], selectedTurn,
                 }}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] truncate" style={{ color: isSelected ? 'var(--text)' : 'var(--text-muted)' }}>
-                    {tools.join(' · ') || 'unknown'}
-                    <span style={{ color: 'var(--text-dim)' }}> ×{turn._tool_count || 0}</span>
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex-none">{emojis.join('')}</span>
+                      <span className="text-[11px] truncate" style={{ color: isSelected ? 'var(--text)' : 'var(--text-muted)' }}>
+                        {tools.join(' · ') || 'unknown'}
+                        <span style={{ color: 'var(--text-dim)' }}> ×{turn._tool_count || 0}</span>
+                      </span>
+                    </div>
+                    {preview && (
+                      <div className="text-[10px] truncate mt-0.5 font-mono" style={{ color: 'var(--text-dim)' }}>
+                        {preview}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5 flex-none">
                     {turnMsgs.length > 0 && (
                       <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{turnMsgs.length}m</span>
@@ -145,7 +174,6 @@ export default function ConversationPanel({ sessionId, turns = [], selectedTurn,
                 {subcalls.length > 1 && <TurnRibbon subcalls={subcalls} />}
               </button>
 
-              {/* Expanded messages */}
               {isExpanded && turnMsgs.length > 0 && (
                 <div
                   className="ml-3 space-y-px pb-0.5"

@@ -52,8 +52,10 @@ def test_list_configured_skills_cli_applies_disabled_filter(monkeypatch, tmp_pat
 
     rows = workflow_store.list_configured_skills(platform="cli")
     names = [row["name"] for row in rows]
-    assert names == ["alpha"]
+    assert names == ["alpha", "beta"]
     assert rows[0]["platform"] == "cli"
+    assert rows[0]["disabled"] is False
+    assert rows[1]["disabled"] is True
 
 
 def test_list_configured_skills_falls_back_to_filesystem_when_cli_unavailable(monkeypatch, tmp_path):

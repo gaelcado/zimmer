@@ -9,9 +9,11 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import {
   MagicWand01Icon, FolderCodeIcon, Brain01Icon, User02Icon,
   Settings01Icon, BookOpen01Icon, Add01Icon, Cancel01Icon,
+  Calendar01Icon,
 } from '@hugeicons/core-free-icons'
 import { marked } from 'marked'
 import Kbd from './Kbd.jsx'
+import CronPanel from './CronPanel.jsx'
 
 // Configure marked for safe rendering
 marked.setOptions({ breaks: true, gfm: true })
@@ -49,6 +51,7 @@ const TABS = [
   { key: 'honcho',    label: 'Honcho',    desc: 'Cross-session memory & personalization',    icon: User02Icon },
   { key: 'config',    label: 'Config',    desc: 'Agent configuration (config.yaml)',         icon: Settings01Icon },
   { key: 'skills',    label: 'Skills',    desc: 'Installed skill catalog',                   icon: BookOpen01Icon },
+  { key: 'cron',      label: 'Cron',      desc: 'Scheduled jobs & automation',               icon: Calendar01Icon },
 ]
 
 export default function ContextScene() {
@@ -92,6 +95,7 @@ export default function ContextScene() {
         {tab === 'honcho' && <HonchoPanel />}
         {tab === 'config' && <FileEditor endpoint="/api/context/config" putEndpoint="/api/context/config" label="config.yaml" language="yaml" />}
         {tab === 'skills' && <SkillsBrowser />}
+        {tab === 'cron' && <CronPanel />}
       </div>
     </div>
   )
@@ -825,17 +829,51 @@ function SkillsBrowser() {
   const [skills, setSkills] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [selectedSkill, setSelectedSkill] = useState(null)
+  const [skillContent, setSkillContent] = useState(null)
+  const [loadingContent, setLoadingContent] = useState(false)
+  const [toggling, setToggling] = useState(new Set())
 
-  useEffect(() => {
+  const fetchSkills = useCallback(() => {
     fetch('/api/context/skills').then(r => r.json()).then(d => {
-      setSkills(d)
+      setSkills(Array.isArray(d) ? d : [])
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [])
 
+  useEffect(() => { fetchSkills() }, [fetchSkills])
+
+  const expandSkill = (name) => {
+    if (selectedSkill === name) {
+      setSelectedSkill(null)
+      setSkillContent(null)
+      return
+    }
+    setSelectedSkill(name)
+    setSkillContent(null)
+    setLoadingContent(true)
+    fetch(`/api/context/skills/${encodeURIComponent(name)}/content`)
+      .then(r => r.json())
+      .then(d => { setSkillContent(d); setLoadingContent(false) })
+      .catch(() => setLoadingContent(false))
+  }
+
+  const toggleSkill = async (name, disabled) => {
+    setToggling(prev => new Set(prev).add(name))
+    try {
+      await fetch(`/api/context/skills/${encodeURIComponent(name)}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabled }),
+      })
+      fetchSkills()
+    } catch { /* swallow */ }
+    setToggling(prev => { const next = new Set(prev); next.delete(name); return next })
+  }
+
   const filtered = search.trim()
     ? skills.filter(s =>
-        `${s.name} ${s.description} ${s.category}`.toLowerCase().includes(search.toLowerCase())
+        `${s.name} ${s.description} ${s.category} ${(s.tags || []).join(' ')}`.toLowerCase().includes(search.toLowerCase())
       )
     : skills
 
@@ -846,11 +884,19 @@ function SkillsBrowser() {
     byCategory[cat].push(s)
   }
   const categories = Object.keys(byCategory).sort()
+  const disabledCount = skills.filter(s => s.disabled).length
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex-none flex items-center justify-between px-4 h-11 border-b" style={{ borderColor: 'var(--border)', background: 'var(--panel)' }}>
-        <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Skills ({skills.length})</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Skills ({skills.length})</span>
+          {disabledCount > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'color-mix(in oklab, var(--warn) 15%, transparent)', color: 'var(--warn)' }}>
+              {disabledCount} disabled
+            </span>
+          )}
+        </div>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -874,26 +920,102 @@ function SkillsBrowser() {
                 {cat} ({byCategory[cat].length})
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                {byCategory[cat].map(skill => (
-                  <div
-                    key={skill.path}
-                    className="rounded-lg border px-3 py-2.5"
-                    style={{ borderColor: 'var(--border)', background: 'var(--panel)' }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>{skill.name}</span>
-                      {skill.version && <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>v{skill.version}</span>}
+                {byCategory[cat].map(skill => {
+                  const isDisabled = skill.disabled
+                  const isSelected = selectedSkill === skill.name
+                  const isToggling = toggling.has(skill.name)
+                  return (
+                    <div key={skill.path || skill.name}>
+                      <button
+                        onClick={() => expandSkill(skill.name)}
+                        className="w-full text-left rounded-lg border px-3 py-2.5 transition-colors"
+                        style={{
+                          borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
+                          background: isSelected
+                            ? 'color-mix(in oklab, var(--accent) 10%, var(--panel) 90%)'
+                            : 'var(--panel)',
+                          opacity: isDisabled ? 0.5 : 1,
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{skill.name}</span>
+                            {skill.version && <span className="text-[10px] flex-none" style={{ color: 'var(--text-dim)' }}>v{skill.version}</span>}
+                          </div>
+                          <div className="flex items-center gap-1 flex-none">
+                            {skill.source && (
+                              <SkillSourceBadge source={skill.source} />
+                            )}
+                            {skill.trust && skill.trust !== 'unknown' && (
+                              <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: 'color-mix(in oklab, var(--ok) 12%, transparent)', color: 'var(--ok)' }}>
+                                {skill.trust}
+                              </span>
+                            )}
+                            {isDisabled && (
+                              <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: 'color-mix(in oklab, var(--warn) 15%, transparent)', color: 'var(--warn)' }}>
+                                off
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-1 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                          {skill.description || 'No description'}
+                        </div>
+                        {skill.author && (
+                          <div className="text-[10px] mt-1" style={{ color: 'var(--text-dim)' }}>
+                            by {skill.author}
+                          </div>
+                        )}
+                        {skill.tags?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {skill.tags.slice(0, 5).map(tag => (
+                              <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full border" style={{ borderColor: 'var(--border)', color: 'var(--text-dim)' }}>
+                                {tag}
+                              </span>
+                            ))}
+                            {skill.tags.length > 5 && (
+                              <span className="text-[9px] px-1.5 py-0.5" style={{ color: 'var(--text-dim)' }}>+{skill.tags.length - 5}</span>
+                            )}
+                          </div>
+                        )}
+                      </button>
+
+                      {/* Expanded content */}
+                      {isSelected && (
+                        <div className="mt-1 rounded-lg border p-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-elev)' }}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>{skill.name}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleSkill(skill.name, !isDisabled) }}
+                              disabled={isToggling}
+                              className="text-[10px] px-2 py-0.5 rounded border transition-colors"
+                              style={{
+                                borderColor: isDisabled ? 'var(--ok)' : 'var(--warn)',
+                                color: isDisabled ? 'var(--ok)' : 'var(--warn)',
+                                opacity: isToggling ? 0.5 : 1,
+                              }}
+                            >
+                              {isToggling ? '...' : isDisabled ? 'Enable' : 'Disable'}
+                            </button>
+                          </div>
+                          {loadingContent ? (
+                            <div className="text-[11px] py-2" style={{ color: 'var(--text-dim)' }}>Loading content...</div>
+                          ) : skillContent?.body ? (
+                            <div className="overflow-auto" style={{ maxHeight: 400 }}>
+                              <MarkdownPreview content={skillContent.body} />
+                            </div>
+                          ) : skillContent?.content ? (
+                            <pre className="text-[11px] whitespace-pre-wrap break-words" style={{ color: 'var(--text-muted)', fontFamily: '"JetBrains Mono", monospace', maxHeight: 400, overflow: 'auto' }}>
+                              {skillContent.content}
+                            </pre>
+                          ) : (
+                            <div className="text-[11px] py-2 italic" style={{ color: 'var(--text-dim)' }}>No SKILL.md found on filesystem</div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-[11px] mt-1 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
-                      {skill.description || 'No description'}
-                    </div>
-                    {skill.author && (
-                      <div className="text-[10px] mt-1.5" style={{ color: 'var(--text-dim)' }}>
-                        by {skill.author}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -905,6 +1027,21 @@ function SkillsBrowser() {
         </div>
       )}
     </div>
+  )
+}
+
+const _SOURCE_COLORS = {
+  builtin: { bg: 'color-mix(in oklab, #3b82f6 12%, transparent)', color: '#3b82f6' },
+  local:   { bg: 'color-mix(in oklab, var(--ok) 12%, transparent)', color: 'var(--ok)' },
+  hub:     { bg: 'color-mix(in oklab, #a855f7 12%, transparent)', color: '#a855f7' },
+}
+
+function SkillSourceBadge({ source }) {
+  const s = _SOURCE_COLORS[source] || { bg: 'color-mix(in oklab, var(--text-dim) 12%, transparent)', color: 'var(--text-dim)' }
+  return (
+    <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: s.bg, color: s.color }}>
+      {source}
+    </span>
   )
 }
 

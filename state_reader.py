@@ -86,6 +86,36 @@ def get_session(session_id: str) -> dict[str, Any] | None:
         return None
 
 
+def _build_preview(tool_name: str, args: dict) -> str:
+    """Best-effort preview using Hermes display helpers, with inline fallback."""
+    try:
+        import sys
+        import os
+        hermes_src = os.path.join(os.path.dirname(__file__), "..", "..", "hermes-agent")
+        if hermes_src not in sys.path:
+            sys.path.insert(0, hermes_src)
+        from agent.display import build_tool_preview
+        result = build_tool_preview(tool_name, args or {})
+        if result:
+            return result
+    except Exception:
+        pass
+    # Inline fallback for the most common tools
+    _PRIMARY = {
+        "terminal": "command", "web_search": "query", "web_extract": "urls",
+        "read_file": "path", "write_file": "path", "patch": "path",
+        "search_files": "pattern", "browser_navigate": "url",
+    }
+    key = _PRIMARY.get(tool_name)
+    if key and args and key in args:
+        val = args[key]
+        if isinstance(val, list):
+            val = val[0] if val else ""
+        val = str(val)
+        return val[:80] + ("…" if len(val) > 80 else "")
+    return ""
+
+
 def get_tool_calls(session_id: str) -> list[dict]:
     """Return tool call pairs by joining assistant tool_calls with tool responses."""
     sql = """
@@ -93,6 +123,7 @@ def get_tool_calls(session_id: str) -> list[dict]:
             tc_msg.id               AS turn_id,
             tc_msg.timestamp        AS started_at,
             tr_msg.timestamp        AS ended_at,
+            json_extract(tc.value, '$.id') AS call_id,
             COALESCE(
                 tr_msg.tool_name,
                 json_extract(tc.value, '$.function.name')
@@ -127,6 +158,7 @@ def get_tool_calls(session_id: str) -> list[dict]:
             row.pop("args_json", None)
             preview = row.get("result_preview") or ""
             row["result_preview"] = preview[:300]
+            row["preview"] = _build_preview(row.get("tool_name") or "", row.get("args") or {})
             result.append(row)
         return result
     except Exception:
@@ -240,7 +272,7 @@ def get_messages(session_id: str, limit: int = 50) -> list[dict]:
     try:
         with _connect() as conn:
             rows = conn.execute(
-                """SELECT role, content, timestamp, tool_name, tool_call_id, token_count
+                """SELECT id, role, content, timestamp, tool_name, tool_call_id, token_count
                    FROM messages
                    WHERE session_id = ?
                    ORDER BY timestamp DESC

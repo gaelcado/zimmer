@@ -190,7 +190,12 @@ class TestRESTWorkflows:
         data = resp.json()
         names = [row["name"] for row in data["skills"]]
         assert "alpha" in names
-        assert "beta" not in names
+        assert "beta" in names
+        # beta is tagged as disabled but still included in the list
+        beta = next(s for s in data["skills"] if s["name"] == "beta")
+        assert beta["disabled"] is True
+        alpha = next(s for s in data["skills"] if s["name"] == "alpha")
+        assert alpha["disabled"] is False
 
     def test_context_skills_uses_configured_skill_listing(self, client, monkeypatch):
         from zimmer import workflow_store

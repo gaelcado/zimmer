@@ -22,6 +22,7 @@ from . import state_reader
 from . import honcho_reader
 from . import workflow_store
 from . import workflow_engine
+from . import cron_store
 
 
 _UI_DIST = Path(__file__).parent / "ui" / "dist"
@@ -280,6 +281,27 @@ def create_app(bus: EventBus) -> FastAPI:
     @app.get("/api/sessions/active")
     async def api_sessions_active():
         return state_reader.get_active_sessions()
+
+    @app.get("/api/tools/meta")
+    async def api_tools_meta():
+        """Return Hermes tool registry metadata: {tool_name: {emoji, ...}}."""
+        try:
+            import sys
+            import os
+            hermes_src = os.path.join(os.path.dirname(__file__), "..", "..", "hermes-agent")
+            if hermes_src not in sys.path:
+                sys.path.insert(0, hermes_src)
+            from tools.registry import registry
+            result = {}
+            for name, entry in registry._tools.items():
+                meta = {}
+                if entry.emoji:
+                    meta["emoji"] = entry.emoji
+                if meta:
+                    result[name] = meta
+            return result
+        except Exception:
+            return {}
 
     @app.get("/api/sessions/{session_id}/tools")
     async def api_session_tools(session_id: str):
@@ -908,6 +930,96 @@ def create_app(bus: EventBus) -> FastAPI:
     @app.get("/api/context/skills")
     async def api_context_skills():
         return workflow_store.list_configured_skills(platform="cli")
+
+    @app.get("/api/context/skills/{skill_name}/content")
+    async def api_skill_content(skill_name: str):
+        result = workflow_store.get_skill_content(skill_name)
+        if result is None:
+            return {"ok": False, "error": "skill not found"}
+        return result
+
+    class SkillToggleBody(BaseModel):
+        disabled: bool
+
+    @app.post("/api/context/skills/{skill_name}/toggle")
+    async def api_skill_toggle(skill_name: str, body: SkillToggleBody):
+        try:
+            return workflow_store.toggle_skill_disabled(skill_name, body.disabled)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Cron ─────────────────────────────────────────────────────────────
+
+    @app.get("/api/context/cron")
+    async def api_cron_list():
+        try:
+            return cron_store.list_jobs()
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @app.get("/api/context/cron/{job_id}")
+    async def api_cron_get(job_id: str):
+        job = cron_store.get_job(job_id)
+        if job is None:
+            return {"ok": False, "error": "job not found"}
+        return job
+
+    class CronJobBody(BaseModel):
+        name: str | None = None
+        prompt: str | None = None
+        skills: list[str] | None = None
+        skill: str | None = None
+        model: str | None = None
+        provider: str | None = None
+        base_url: str | None = None
+        api_key_env: str | None = None
+        schedule: dict | None = None
+        schedule_display: str | None = None
+        enabled: bool | None = None
+        deliver: str | None = None
+        origin: dict | None = None
+        repeat: dict | None = None
+
+    @app.post("/api/context/cron")
+    async def api_cron_create(body: CronJobBody):
+        try:
+            job = cron_store.create_job(body.model_dump(exclude_none=True))
+            return {"ok": True, "job": job}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @app.put("/api/context/cron/{job_id}")
+    async def api_cron_update(job_id: str, body: CronJobBody):
+        try:
+            job = cron_store.update_job(job_id, body.model_dump(exclude_none=True))
+            if job is None:
+                return {"ok": False, "error": "job not found"}
+            return {"ok": True, "job": job}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @app.delete("/api/context/cron/{job_id}")
+    async def api_cron_delete(job_id: str):
+        try:
+            ok = cron_store.delete_job(job_id)
+            if not ok:
+                return {"ok": False, "error": "job not found"}
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    class CronToggleBody(BaseModel):
+        enabled: bool
+
+    @app.post("/api/context/cron/{job_id}/toggle")
+    async def api_cron_toggle(job_id: str, body: CronToggleBody):
+        try:
+            job = cron_store.toggle_job(job_id, body.enabled)
+            if job is None:
+                return {"ok": False, "error": "job not found"}
+            return {"ok": True, "job": job}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     # ── Honcho ──────────────────────────────────────────────────────────────
 

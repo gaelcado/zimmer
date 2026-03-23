@@ -1,4 +1,7 @@
+import { useToolMeta, toolEmoji } from '../lib/toolMeta.js'
+
 export default function TurnGroupsPanel({ turns, selectedTurn, onSelectTurn }) {
+  const toolMeta = useToolMeta()
   if (!turns || turns.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-[12px]" style={{ color: 'var(--text-dim)' }}>
@@ -14,6 +17,8 @@ export default function TurnGroupsPanel({ turns, selectedTurn, onSelectTurn }) {
         const subcalls = turn._subcalls || []
         const dur = fmtTurnDur(turn)
         const tools = [...new Set(subcalls.map(t => t.tool_name).filter(Boolean))]
+        const emojis = [...new Set(tools.map(t => toolEmoji(t, toolMeta)))]
+        const preview = subcalls.find(s => s.preview)?.preview || null
 
         return (
           <button
@@ -30,10 +35,20 @@ export default function TurnGroupsPanel({ turns, selectedTurn, onSelectTurn }) {
             }}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] truncate" style={{ color: isSelected ? 'var(--text)' : 'var(--text-muted)' }}>
-                {tools.join(' \u00B7 ') || 'unknown'}
-                <span style={{ color: 'var(--text-dim)' }}> {' ×'}{turn._tool_count || 0}</span>
-              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="flex-none">{emojis.join('')}</span>
+                  <span className="text-[11px] truncate" style={{ color: isSelected ? 'var(--text)' : 'var(--text-muted)' }}>
+                    {tools.join(' · ') || 'unknown'}
+                    <span style={{ color: 'var(--text-dim)' }}> ×{turn._tool_count || 0}</span>
+                  </span>
+                </div>
+                {preview && (
+                  <div className="text-[10px] truncate mt-0.5 font-mono" style={{ color: 'var(--text-dim)' }}>
+                    {preview}
+                  </div>
+                )}
+              </div>
               <span className="text-[10px] flex-none" style={{ color: turn.ended_at ? 'var(--text-dim)' : 'var(--ok)' }}>
                 {dur}
               </span>

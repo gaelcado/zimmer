@@ -35,7 +35,7 @@
 |---|-------|--------|-------------|
 | 1 | **Monitor** | `1` | Session list/tree, turns, messages, live tool activity |
 | 2 | **Terminal** | `2` | In-app PTY shell over WebSocket |
-| 3 | **Context** | `3` | Soul, Workspace, Memories, Honcho, Config, Skills editors |
+| 3 | **Context** | `3` | Soul, Workspace, Memories, Honcho, Config, Skills, Cron editors |
 | 4 | **Logs** | `4` | `~/.hermes/logs` browser with tail controls |
 | 5 | **Workflow** | `5` | Visual workflow builder (`~/.hermes/workflows/*.yaml`) |
 | 6 | **Ask Docs** | `6` | Opens DeepWiki for Hermes Agent in a new tab |
@@ -100,12 +100,32 @@ Tabbed editor for the key layers of a Hermes agent's context:
 | **Memories** | `~/.hermes/memories/*.md` (including `MEMORY.md`, `USER.md`, custom files) |
 | **Honcho** | Status, config, session, and peer helpers |
 | **Config** | `~/.hermes/config.yaml` with inline YAML validation |
-| **Skills** | Installed skill catalog browser |
+| **Skills** | Installed skill catalog with content viewer and enable/disable toggle |
+| **Cron** | Scheduled job manager for `~/.hermes/cron/jobs.json` |
 
 Editor behaviors:
 - Markdown files default to **Preview** mode
 - YAML/JSON get a formatted view
 - File creation is built-in for Workspace and Memory tabs
+
+### Skills Tab
+
+- Browseable grid of all installed skills, organized by category
+- Disabled skills are shown (greyed out) rather than hidden — use the toggle to enable/disable without leaving Zimmer
+- Click any skill card to expand its full `SKILL.md` content rendered as markdown
+- Source badges (builtin / local / hub), trust level, tags, and prerequisites shown per skill
+- Search filters on name, description, category, and tags
+
+### Cron Tab
+
+Full CRUD manager for Hermes scheduled jobs:
+- Job list with status indicators (enabled / paused / error), schedule display, and next-run time
+- Click a job to see full details: prompt, model, provider, skills, deliver target, last/next run, run history
+- Edit any field inline — name, schedule expression, prompt, model, skills, deliver
+- Toggle jobs on/off without editing; disable sets `state: paused`, enable restores `state: scheduled`
+- Create new jobs with a guided form (kind dropdown: cron / interval / delay / once)
+- Delete with confirmation
+- Reads and writes `~/.hermes/cron/jobs.json` with `fcntl` file locking to avoid conflicts with the gateway daemon
 
 ---
 
@@ -226,6 +246,14 @@ PUT    /context/memories/{filename}
 GET    /context/config
 PUT    /context/config
 GET    /context/skills
+GET    /context/skills/{name}/content
+POST   /context/skills/{name}/toggle
+GET    /context/cron
+GET    /context/cron/{id}
+POST   /context/cron
+PUT    /context/cron/{id}
+DELETE /context/cron/{id}
+POST   /context/cron/{id}/toggle
 ```
 
 ### Workflows
@@ -273,8 +301,9 @@ GET    /honcho/sessions/{id}/context
 | `server.py` | FastAPI app factory. REST endpoints, SSE at `/api/events`, WebSocket PTY at `/api/terminal`, and static SPA serving from `ui/dist/`. |
 | `state_reader.py` | Read-only SQLite queries against `~/.hermes/state.db`. Uses a read-only URI connection; write-path (`_connect_rw`) is limited to kill/rename mutations. |
 | `honcho_reader.py` | Optional Honcho SDK integration. Reads `~/.honcho/config.json`, resolves per-host blocks, and proxies session/peer data to the UI. |
-| `workflow_store.py` | Workflow persistence under `~/.hermes/workflows/` and skill discovery. Prefers `hermes skills list --source all`; falls back to filesystem scan. |
+| `workflow_store.py` | Workflow persistence under `~/.hermes/workflows/` and skill discovery. Prefers `hermes skills list --source all`; falls back to filesystem scan. Includes `get_skill_content()` and `toggle_skill_disabled()`. |
 | `workflow_engine.py` | Workflow graph validation (cycle detection) and execution planning. |
+| `cron_store.py` | Read/write access to `~/.hermes/cron/jobs.json` with `fcntl` file locking. CRUD + toggle for cron jobs. |
 
 ### Frontend (React + Vite)
 
@@ -285,6 +314,7 @@ Located in `ui/`. React 18 SPA with Tailwind CSS, canvas timeline rendering, xte
 | `App.jsx` | Root component. Scene routing and global keyboard shortcuts. |
 | `StatsBar.jsx` | Navbar tabs, gateway/honcho indicators, monitor view toggle. |
 | `WorkflowScene.jsx` | Workflow builder, editor, and run controls. |
+| `CronPanel.jsx` | Cron job manager (list + detail/editor). Mounted inside ContextScene's Cron tab. |
 | `LogsScene.jsx` | Log browser with tail controls and stable scroll. |
 | `TimelineCanvas.jsx` | Canvas-rendered DAW-style tool call timeline. |
 | `AgentLineageTimeline.jsx` | Tree view of parent/child agent relationships. |
@@ -334,6 +364,7 @@ cd ui && npm run build
 | `~/.hermes/memories/` | Memory files |
 | `~/.hermes/skills/` | Installed skills |
 | `~/.hermes/workflows/` | Workflow definitions |
+| `~/.hermes/cron/jobs.json` | Cron job definitions |
 | `~/.hermes/logs/` | Log files |
 | `ui/dist/` | Built SPA (served by FastAPI) |
 | Port `7778` | Hardcoded server port |

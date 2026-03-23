@@ -23,3 +23,7 @@ Thumbs.db
 
 # Stray assets
 image copy.png
+
+# Markdown files (except README)
+*.md
+!README.md
