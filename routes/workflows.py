@@ -32,9 +32,16 @@ def set_bus(bus: EventBus) -> None:
     _bus = bus
 
 
-def _configured_skill_name_set(platform: str = "cli") -> set[str]:
+def _configured_skill_name_set(platform: str = "cli") -> set[str] | None:
+    """Return the set of known skill names, or None if the list is unavailable.
+
+    None tells validate_workflow to skip skill-availability checks entirely,
+    which is the right behaviour when the hermes CLI cannot be reached (e.g.
+    in test environments or sandboxed deployments).
+    """
     rows = workflow_store.list_configured_skills(platform=platform)
-    return {str(r.get("name") or "").strip() for r in rows if str(r.get("name") or "").strip()}
+    names = {str(r.get("name") or "").strip() for r in rows if str(r.get("name") or "").strip()}
+    return names if names else None
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────

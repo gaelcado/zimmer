@@ -1,5 +1,7 @@
 """FastAPI app factory: registers routers, startup hook, and SPA static serving."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,14 +18,8 @@ _UI_DIST = _config.UI_DIST
 
 
 def create_app(bus: EventBus) -> FastAPI:
-    app = FastAPI(title="Hermes Zimmer", docs_url=None, redoc_url=None)
-
-    # Wire the bus into routers that need it.
-    events.set_bus(bus)
-    workflows.set_bus(bus)
-
-    @app.on_event("startup")
-    async def _startup():
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         workflow_store.reconcile_running_runs()
         workflow_store.cleanup_run_records(
             max_age_days=WORKFLOW_RUN_RETENTION_DAYS,
@@ -38,6 +34,13 @@ def create_app(bus: EventBus) -> FastAPI:
                 "which may conflict with Hermes v0.4.0+ scheduler. "
                 "Ensure hermes-agent is at ../../hermes-agent relative to the plugin."
             )
+        yield
+
+    app = FastAPI(title="Hermes Zimmer", docs_url=None, redoc_url=None, lifespan=lifespan)
+
+    # Wire the bus into routers that need it.
+    events.set_bus(bus)
+    workflows.set_bus(bus)
 
     # ── Routers ───────────────────────────────────────────────────────────────
     app.include_router(sessions.router)

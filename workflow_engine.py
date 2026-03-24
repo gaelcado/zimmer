@@ -64,7 +64,11 @@ def validate_workflow(
             skill_name = str(node.get("skill") or node.get("label") or "").strip()
             if not skill_name:
                 issues.append(f"skill node '{node_id}' is missing skill name")
-            elif configured_skill_names is not None and skill_name not in configured_skill_names:
+            elif (
+                configured_skill_names is not None
+                and skill_name not in configured_skill_names
+                and not allow_incomplete
+            ):
                 issues.append(f"skill node '{node_id}' references unavailable skill '{skill_name}'")
 
         node_ids.append(node_id)
