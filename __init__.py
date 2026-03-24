@@ -11,6 +11,23 @@ from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
+# ── Singleton bus shared by the plugin path and the gateway hook path ─────────
+
+_bus = None
+_bus_lock = threading.Lock()
+
+
+def _get_or_create_bus():
+    """Return the process-wide EventBus, creating it on first call."""
+    global _bus
+    if _bus is not None:
+        return _bus
+    with _bus_lock:
+        if _bus is None:
+            from .event_bus import EventBus
+            _bus = EventBus()
+    return _bus
+
 
 def _is_port_in_use(host: str = "127.0.0.1", port: int = 7778) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -19,9 +36,7 @@ def _is_port_in_use(host: str = "127.0.0.1", port: int = 7778) -> bool:
 
 
 def register(ctx) -> None:
-    from .event_bus import EventBus
-
-    bus = EventBus()
+    bus = _get_or_create_bus()
 
     # ── Tool lifecycle ────────────────────────────────────────────────────────
 
@@ -94,6 +109,55 @@ def register(ctx) -> None:
     ctx.register_hook("pre_llm_call", on_pre_llm)
     ctx.register_hook("post_llm_call", on_post_llm)
 
+    # ── Permission approval lifecycle (v0.4.0+) ───────────────────────────────
+    # Wrapped in try/except so the plugin loads cleanly on older Hermes hosts
+    # that don't expose these hooks.
+
+    def on_permission_request(tool_name: str = "", reason: str = "", session_id: str = "", **kwargs):
+        bus.publish({
+            "type": "permission_request",
+            "tool": tool_name,
+            "reason": reason,
+            "session_id": session_id,
+        })
+
+    def on_permission_resolved(tool_name: str = "", approved: bool = False, session_id: str = "", **kwargs):
+        bus.publish({
+            "type": "permission_resolved",
+            "tool": tool_name,
+            "approved": approved,
+            "session_id": session_id,
+        })
+
+    try:
+        ctx.register_hook("on_permission_request", on_permission_request)
+        ctx.register_hook("on_permission_resolved", on_permission_resolved)
+    except (AttributeError, ValueError):
+        pass
+
+    # ── Queue events (v0.4.0+) ────────────────────────────────────────────────
+
+    def on_task_queued(task_id: str = "", prompt: str = "", session_id: str = "", **kwargs):
+        bus.publish({
+            "type": "task_queued",
+            "task_id": task_id,
+            "prompt_preview": (prompt or "")[:120],
+            "session_id": session_id,
+        })
+
+    def on_queue_change(queue_depth: int = 0, session_id: str = "", **kwargs):
+        bus.publish({
+            "type": "queue_change",
+            "queue_depth": queue_depth,
+            "session_id": session_id,
+        })
+
+    try:
+        ctx.register_hook("on_task_queued", on_task_queued)
+        ctx.register_hook("on_queue_change", on_queue_change)
+    except (AttributeError, ValueError):
+        pass
+
     _start_server_thread(bus)
 
 
@@ -105,7 +169,7 @@ def _find_call_id(bus, tool_name: str, task_id: str) -> str:
     return str(uuid4())[:12]
 
 
-def _start_server_thread(bus) -> None:
+def _start_server_thread(bus, open_browser: bool = True) -> None:
     if _is_port_in_use("127.0.0.1", 7778):
         logger.info("Zimmer: UI already running on 127.0.0.1:7778, skipping duplicate server start.")
         return
@@ -142,7 +206,7 @@ def _start_server_thread(bus) -> None:
 
     threading.Thread(target=run, name="hermes-zimmer", daemon=True).start()
 
-    if not os.getenv("ZIMMER_NO_BROWSER"):
+    if open_browser and not os.getenv("ZIMMER_NO_BROWSER"):
         threading.Thread(
             target=lambda: (time.sleep(0.4), webbrowser.open("http://127.0.0.1:7778")),
             daemon=True,

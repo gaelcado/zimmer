@@ -8,7 +8,7 @@ import {
   HierarchyCircle01Icon,
 } from '@hugeicons/core-free-icons'
 
-export default function WorkflowScene() {
+export default function WorkflowScene({ lastWorkflowEvent }) {
   const [workflows, setWorkflows] = useState([])
   const [skills, setSkills] = useState([])
   const [loading, setLoading] = useState(true)
@@ -320,30 +320,37 @@ export default function WorkflowScene() {
     setTimeout(() => setSaveMsg(null), 3500)
   }, [importText, load, wfFetch])
 
-  useEffect(() => {
-    if (!runId) return
-    let stop = false
-    const poll = async () => {
-      try {
-        const res = await wfFetch(`/api/workflows/runs/${encodeURIComponent(runId)}`)
-        const data = await res.json()
-        if (!stop && data.ok && data.run) {
-          setRunData(data.run)
-          if (data.run.status === 'running') {
-            setTimeout(poll, 900)
-          } else {
-            setRunning(false)
-          }
-        } else if (!stop) {
-          setRunning(false)
-        }
-      } catch {
-        if (!stop) setRunning(false)
+  // Fetch the current run record.
+  const refreshRun = useCallback(async (id) => {
+    if (!id) return
+    try {
+      const res = await wfFetch(`/api/workflows/runs/${encodeURIComponent(id)}`)
+      const data = await res.json()
+      if (data.ok && data.run) {
+        setRunData(data.run)
+        if (data.run.status !== 'running') setRunning(false)
+      } else {
+        setRunning(false)
       }
+    } catch {
+      setRunning(false)
     }
-    poll()
-    return () => { stop = true }
-  }, [runId, wfFetch])
+  }, [wfFetch])
+
+  // When SSE delivers a workflow event for our active run, refresh immediately.
+  useEffect(() => {
+    if (!lastWorkflowEvent || !runId) return
+    if (lastWorkflowEvent.run_id !== runId) return
+    refreshRun(runId)
+  }, [lastWorkflowEvent, runId, refreshRun])
+
+  // Fallback: poll at 2s when running but no SSE workflow event has arrived yet.
+  // Stops as soon as run finishes or SSE takes over.
+  useEffect(() => {
+    if (!runId || !running) return
+    const interval = setInterval(() => refreshRun(runId), 2000)
+    return () => clearInterval(interval)
+  }, [runId, running, refreshRun])
 
   if (loading) {
     return <div className="h-full flex items-center justify-center" style={{ color: 'var(--text-dim)' }}>Loading workflows...</div>

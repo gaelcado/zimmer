@@ -5,10 +5,16 @@ const RIGHT_PAD = 34
 const TOP_PAD = 20
 
 const SRC = {
-  cli: '#155838',
-  telegram: '#38bdf8',
-  discord: '#818cf8',
-  gateway: '#71717a',
+  cli:        '#155838',
+  telegram:   '#38bdf8',
+  discord:    '#818cf8',
+  gateway:    '#71717a',
+  signal:     '#2a9c6b',
+  dingtalk:   '#1677ff',
+  sms:        '#f59e0b',
+  mattermost: '#0058cc',
+  matrix:     '#0dbd8b',
+  webhook:    '#8b5cf6',
 }
 
 export default function AgentLineageTimeline({

@@ -217,6 +217,27 @@ class TestGetMessages:
     def test_empty_for_unknown_session(self):
         assert state_reader.get_messages("nonexistent") == []
 
+    def test_returns_summary_and_compressed_roles(self, populated_db):
+        """v0.4.0 context compression introduces summary/compressed message roles."""
+        import time as _time
+        conn = sqlite3.connect(str(populated_db))
+        now = _time.time()
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+            ("sess-active-001", "summary", "Summary of prior context.", now + 1),
+        )
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+            ("sess-active-001", "compressed", "", now + 2),
+        )
+        conn.commit()
+        conn.close()
+
+        msgs = state_reader.get_messages("sess-active-001", limit=10)
+        roles = {m["role"] for m in msgs}
+        assert "summary" in roles
+        assert "compressed" in roles
+
 
 class TestKillSession:
     def test_kill_active_session(self):

@@ -84,8 +84,25 @@ Zimmer merges two sources to show what's happening right now:
 |--------|--------|----------|
 | Active tool calls | Plugin hook stream | DB-based inflight inference |
 | LLM activity | `llm_start` / `llm_end` hook events | `GET /api/events/active-llm` DB endpoint |
+| Permission requests | `on_permission_request` / `on_permission_resolved` hooks | — |
+| Queue depth | `on_task_queued` / `on_queue_change` hooks | — |
 
 If hooks are missing, Zimmer degrades gracefully to DB-backed polling — no configuration needed.
+
+### Message Roles
+
+| Role | Badge | Rendering |
+|------|-------|-----------|
+| `assistant` | `AI` | Markdown |
+| `user` | `USER` | Plain text |
+| `system` | `SYS` | Plain text |
+| `tool` | `TOOL` | Plain text |
+| `summary` | `SUM` | Teal — Markdown (context compression summary) |
+| `compressed` | `CMP` | Amber — italic banner "Context compressed — older messages omitted" |
+
+### @context References
+
+Messages containing `@file:path` or `@url:https://...` tokens render inline chips above the message body — blue for files, purple for URLs.
 
 ---
 
@@ -102,6 +119,7 @@ Tabbed editor for the key layers of a Hermes agent's context:
 | **Config** | `~/.hermes/config.yaml` with inline YAML validation |
 | **Skills** | Installed skill catalog with content viewer and enable/disable toggle |
 | **Cron** | Scheduled job manager for `~/.hermes/cron/jobs.json` |
+| **MCP** | MCP server registry (`mcp_servers:` key in `~/.hermes/config.yaml`) |
 
 Editor behaviors:
 - Markdown files default to **Preview** mode
@@ -125,7 +143,7 @@ Full CRUD manager for Hermes scheduled jobs:
 - Toggle jobs on/off without editing; disable sets `state: paused`, enable restores `state: scheduled`
 - Create new jobs with a guided form (kind dropdown: cron / interval / delay / once)
 - Delete with confirmation
-- Reads and writes `~/.hermes/cron/jobs.json` with `fcntl` file locking to avoid conflicts with the gateway daemon
+- Delegates storage to Hermes core's `cron.jobs` module when available (atomic `os.replace` writes), with `fcntl`-locked fallback for older installs
 
 ---
 
@@ -254,6 +272,9 @@ POST   /context/cron
 PUT    /context/cron/{id}
 DELETE /context/cron/{id}
 POST   /context/cron/{id}/toggle
+GET    /context/mcp/servers
+PUT    /context/mcp/servers/{name}
+DELETE /context/mcp/servers/{name}
 ```
 
 ### Workflows
@@ -303,7 +324,7 @@ GET    /honcho/sessions/{id}/context
 | `honcho_reader.py` | Optional Honcho SDK integration. Reads `~/.honcho/config.json`, resolves per-host blocks, and proxies session/peer data to the UI. |
 | `workflow_store.py` | Workflow persistence under `~/.hermes/workflows/` and skill discovery. Prefers `hermes skills list --source all`; falls back to filesystem scan. Includes `get_skill_content()` and `toggle_skill_disabled()`. |
 | `workflow_engine.py` | Workflow graph validation (cycle detection) and execution planning. |
-| `cron_store.py` | Read/write access to `~/.hermes/cron/jobs.json` with `fcntl` file locking. CRUD + toggle for cron jobs. |
+| `cron_store.py` | Read/write access to `~/.hermes/cron/jobs.json`. Delegates to Hermes core's `cron.jobs` module (atomic writes) when available; `fcntl`-locked fallback for older installs. |
 
 ### Frontend (React + Vite)
 

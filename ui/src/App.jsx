@@ -22,7 +22,7 @@ const ASK_DOCS_URL = 'https://deepwiki.com/NousResearch/hermes-agent'
 const AGENT_DELEGATE_TOOLS = new Set(['spawn_agent', 'run_agent', 'call_agent', 'delegate_agent'])
 
 export default function App() {
-  const { sessions, activeTasks, llmActive, stats, processes, connected, gatewayHealthy, lastToolEnd, honchoStatus, fetchTools, killSession, renameSession } = useSessionData()
+  const { sessions, activeTasks, llmActive, stats, processes, connected, gatewayHealthy, lastToolEnd, lastWorkflowEvent, honchoStatus, pendingPermissions, queueDepths, fetchTools, killSession, renameSession } = useSessionData()
   const [scene, setScene] = useState('monitor')
   const [theme, setTheme] = useState(() => localStorage.getItem('zimmer_theme') || 'dark')
   const [lineageFocus, setLineageFocus] = useState(() => localStorage.getItem('zimmer_lineage_focus') || 'all')
@@ -339,6 +339,8 @@ export default function App() {
                     onSelect={handleSelectSession}
                     llmActive={llmActive}
                     sessionActiveTasks={sessionActiveTasks}
+                    pendingPermissions={pendingPermissions}
+                    queueDepths={queueDepths}
                     onRename={renameSession}
                   />
                   {middlePanel}
@@ -388,7 +390,7 @@ export default function App() {
               transition={{ duration: 0.22 }}
               className="h-full"
             >
-              <WorkflowScene />
+              <WorkflowScene lastWorkflowEvent={lastWorkflowEvent} />
             </motion.div>
           )}
 

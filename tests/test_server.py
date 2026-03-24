@@ -493,10 +493,10 @@ class TestRESTProcesses:
         assert resp.json() == []
 
     def test_processes_with_file(self, client, tmp_path, monkeypatch):
-        import zimmer.server as server_mod
+        import zimmer.routes.sessions as sessions_mod
         proc_file = tmp_path / "processes.json"
         proc_file.write_text(json.dumps([{"pid": 1234, "cmd": "npm run dev"}]))
-        monkeypatch.setattr(server_mod, "_PROCESSES_PATH", proc_file)
+        monkeypatch.setattr(sessions_mod, "PROCESSES_PATH", proc_file)
 
         resp = client.get("/api/processes")
         assert resp.status_code == 200

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import zimmer
 from zimmer import register, _find_call_id
 from zimmer.event_bus import EventBus
 
@@ -26,21 +27,15 @@ def _register_and_get_bus(mock_ctx, monkeypatch):
 
 
 def _setup_with_known_bus(mock_ctx, monkeypatch):
-    """Register the plugin but intercept the EventBus it creates."""
+    """Register the plugin with a known singleton EventBus instance."""
     monkeypatch.setenv("ZIMMER_NO_BROWSER", "1")
-    captured_bus = {}
+    bus = EventBus()
+    monkeypatch.setattr(zimmer, "_bus", bus)
 
-    original_init = EventBus.__init__
+    with patch("zimmer._start_server_thread"):
+        register(mock_ctx)
 
-    def patched_init(self, *args, **kwargs):
-        original_init(self, *args, **kwargs)
-        captured_bus["bus"] = self
-
-    with patch.object(EventBus, "__init__", patched_init):
-        with patch("zimmer._start_server_thread"):
-            register(mock_ctx)
-
-    return mock_ctx._hooks, captured_bus["bus"]
+    return mock_ctx._hooks, bus
 
 
 class TestPluginRegistration:
@@ -56,6 +51,10 @@ class TestPluginRegistration:
             "on_session_end",
             "pre_llm_call",
             "post_llm_call",
+            "on_permission_request",
+            "on_permission_resolved",
+            "on_task_queued",
+            "on_queue_change",
         }
         assert set(mock_plugin_ctx._hooks.keys()) == expected_hooks
 
@@ -233,3 +232,125 @@ class TestFindCallId:
 
         found = _find_call_id(bus, "terminal", "s2")
         assert found == "c2"
+
+
+class TestPermissionHooks:
+    """v0.4.0: on_permission_request / on_permission_resolved hooks."""
+
+    def test_permission_request_publishes_event(self, mock_plugin_ctx, monkeypatch):
+        hooks, bus = _setup_with_known_bus(mock_plugin_ctx, monkeypatch)
+
+        hooks["on_permission_request"][0](
+            tool_name="terminal", reason="needs shell access", session_id="sess-42"
+        )
+
+        history = bus.get_history()
+        assert len(history) == 1
+        ev = history[0]
+        assert ev["type"] == "permission_request"
+        assert ev["tool"] == "terminal"
+        assert ev["reason"] == "needs shell access"
+        assert ev["session_id"] == "sess-42"
+
+    def test_permission_resolved_publishes_event(self, mock_plugin_ctx, monkeypatch):
+        hooks, bus = _setup_with_known_bus(mock_plugin_ctx, monkeypatch)
+
+        hooks["on_permission_resolved"][0](
+            tool_name="terminal", approved=True, session_id="sess-42"
+        )
+
+        history = bus.get_history()
+        assert len(history) == 1
+        ev = history[0]
+        assert ev["type"] == "permission_resolved"
+        assert ev["tool"] == "terminal"
+        assert ev["approved"] is True
+        assert ev["session_id"] == "sess-42"
+
+    def test_permission_hooks_graceful_on_old_host(self, monkeypatch):
+        """register() must not raise when the host raises ValueError for unknown hooks."""
+        import zimmer as _z
+
+        class _StrictCtx:
+            def __init__(self):
+                self._hooks = {}
+
+            def register_hook(self, name, fn):
+                if name in ("on_permission_request", "on_permission_resolved"):
+                    raise ValueError(f"Unknown hook: {name}")
+                self._hooks.setdefault(name, []).append(fn)
+
+        ctx = _StrictCtx()
+        monkeypatch.setenv("ZIMMER_NO_BROWSER", "1")
+        bus = EventBus()
+        monkeypatch.setattr(_z, "_bus", bus)
+
+        with patch("zimmer._start_server_thread"):
+            register(ctx)  # must not raise
+
+        # Core hooks still registered
+        assert "pre_tool_call" in ctx._hooks
+        assert "on_permission_request" not in ctx._hooks
+
+
+class TestQueueHooks:
+    """v0.4.0: on_task_queued / on_queue_change hooks."""
+
+    def test_task_queued_publishes_event(self, mock_plugin_ctx, monkeypatch):
+        hooks, bus = _setup_with_known_bus(mock_plugin_ctx, monkeypatch)
+
+        hooks["on_task_queued"][0](
+            task_id="t-001", prompt="summarize this doc", session_id="sess-01"
+        )
+
+        history = bus.get_history()
+        assert len(history) == 1
+        ev = history[0]
+        assert ev["type"] == "task_queued"
+        assert ev["task_id"] == "t-001"
+        assert ev["session_id"] == "sess-01"
+        assert ev["prompt_preview"] == "summarize this doc"
+
+    def test_task_queued_prompt_truncated(self, mock_plugin_ctx, monkeypatch):
+        hooks, bus = _setup_with_known_bus(mock_plugin_ctx, monkeypatch)
+
+        hooks["on_task_queued"][0](task_id="t-002", prompt="x" * 200, session_id="sess-01")
+
+        ev = bus.get_history()[0]
+        assert len(ev["prompt_preview"]) == 120
+
+    def test_queue_change_publishes_event(self, mock_plugin_ctx, monkeypatch):
+        hooks, bus = _setup_with_known_bus(mock_plugin_ctx, monkeypatch)
+
+        hooks["on_queue_change"][0](queue_depth=3, session_id="sess-01")
+
+        history = bus.get_history()
+        assert len(history) == 1
+        ev = history[0]
+        assert ev["type"] == "queue_change"
+        assert ev["queue_depth"] == 3
+        assert ev["session_id"] == "sess-01"
+
+    def test_queue_hooks_graceful_on_old_host(self, monkeypatch):
+        """register() must not raise when the host raises ValueError for queue hooks."""
+        import zimmer as _z
+
+        class _StrictCtx:
+            def __init__(self):
+                self._hooks = {}
+
+            def register_hook(self, name, fn):
+                if name in ("on_task_queued", "on_queue_change"):
+                    raise ValueError(f"Unknown hook: {name}")
+                self._hooks.setdefault(name, []).append(fn)
+
+        ctx = _StrictCtx()
+        monkeypatch.setenv("ZIMMER_NO_BROWSER", "1")
+        bus = EventBus()
+        monkeypatch.setattr(_z, "_bus", bus)
+
+        with patch("zimmer._start_server_thread"):
+            register(ctx)  # must not raise
+
+        assert "pre_tool_call" in ctx._hooks
+        assert "on_task_queued" not in ctx._hooks

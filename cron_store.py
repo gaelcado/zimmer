@@ -1,12 +1,34 @@
-"""Read/write access to ~/.hermes/cron/jobs.json with file locking."""
+"""Read/write access to ~/.hermes/cron/jobs.json.
+
+Delegates to hermes.cron.jobs (atomic temp-file writes) when available so that
+Zimmer and the Hermes scheduler share one consistent write path.  Falls back to
+fcntl-locked direct writes for older / standalone environments.
+"""
 
 import fcntl
 import json
+import logging
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
+
+# ── Try to delegate I/O to Hermes core cron module ────────────────────────────
+_hermes_src = os.path.join(os.path.dirname(__file__), "..", "..", "hermes-agent")
+if _hermes_src not in sys.path:
+    sys.path.insert(0, _hermes_src)
+
+try:
+    from cron.jobs import load_jobs as _h_load_jobs, save_jobs as _h_save_jobs
+    _HERMES_CRON = True
+    logger.debug("cron_store: delegating I/O to hermes cron.jobs")
+except ImportError:
+    _HERMES_CRON = False
+    logger.debug("cron_store: hermes cron.jobs unavailable, using fcntl fallback")
 
 
 def _hermes_home() -> Path:
@@ -18,6 +40,12 @@ def _cron_jobs_path() -> Path:
 
 
 def _read_jobs_locked() -> dict:
+    if _HERMES_CRON:
+        try:
+            return {"jobs": _h_load_jobs()}
+        except Exception:
+            pass
+    # fcntl fallback
     p = _cron_jobs_path()
     if not p.exists():
         return {"jobs": []}
@@ -32,6 +60,13 @@ def _read_jobs_locked() -> dict:
 
 
 def _write_jobs_locked(data: dict) -> None:
+    if _HERMES_CRON:
+        try:
+            _h_save_jobs(data.get("jobs", []))
+            return
+        except Exception:
+            pass
+    # fcntl fallback
     p = _cron_jobs_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "r+" if p.exists() else "w") as f:

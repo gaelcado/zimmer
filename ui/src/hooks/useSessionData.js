@@ -24,7 +24,12 @@ export function useSessionData() {
   const [connected, setConnected]     = useState(false)
   const [gatewayHealthy, setGatewayHealthy] = useState(false)
   const [lastToolEnd, setLastToolEnd] = useState(null)
+  const [lastWorkflowEvent, setLastWorkflowEvent] = useState(null)
   const [honchoStatus, setHonchoStatus] = useState(null)
+  // Map<session_id, {tool, reason}> — sessions with an outstanding permission request
+  const [pendingPermissions, setPendingPermissions] = useState(new Map())
+  // Map<session_id, number> — queue depth per session
+  const [queueDepths, setQueueDepths] = useState(new Map())
   const connectedRef = useRef(false)
 
   const fetchJson = useCallback(async (url, { timeoutMs = 6000, retries = 1 } = {}) => {
@@ -106,7 +111,7 @@ export function useSessionData() {
     } catch (_) {}
   }, [fetchJson])
 
-  // Initial load + polling (slower when SSE is connected)
+  // Initial load on mount.
   useEffect(() => {
     loadSessions()
     loadStats()
@@ -115,23 +120,31 @@ export function useSessionData() {
     replayActiveLlm()
     loadHonchoStatus()
     loadHealth()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Polling: 5s when SSE is disconnected, 30s when connected (safety net only).
+  // Re-creates the interval whenever `connected` flips so the rate is correct.
+  useEffect(() => {
     const interval = setInterval(() => {
       loadSessions()
       loadStats()
       loadProcesses()
       loadHealth()
-    }, connectedRef.current ? 15000 : 5000)
+    }, connected ? 30000 : 5000)
     return () => clearInterval(interval)
-  }, [loadSessions, loadStats, loadProcesses, replayActiveTools, replayActiveLlm, loadHonchoStatus, loadHealth])
+  }, [connected, loadSessions, loadStats, loadProcesses, loadHealth])
 
-  // Reconcile live active tools periodically in case SSE messages were missed.
+  // Fallback reconciliation for active tools — only poll when SSE is down.
+  // When SSE is live the tool_start/tool_end events keep activeTasks accurate.
   useEffect(() => {
+    if (connected) return
     const interval = setInterval(() => {
       replayActiveTools()
       replayActiveLlm()
     }, 4000)
     return () => clearInterval(interval)
-  }, [replayActiveTools, replayActiveLlm])
+  }, [connected, replayActiveTools, replayActiveLlm])
 
   // ── SSE event handler ──────────────────────────────────────────────────────
 
@@ -186,6 +199,47 @@ export function useSessionData() {
       setTimeout(loadSessions, 200)
       setTimeout(loadStats, 300)
 
+    } else if (event.type === 'workflow_start' || event.type === 'workflow_step_start' ||
+               event.type === 'workflow_step_done' || event.type === 'workflow_complete' ||
+               event.type === 'workflow_error') {
+      // Notify workflow subscribers (e.g. WorkflowScene polling the run record).
+      setLastWorkflowEvent({ type: event.type, run_id: event.run_id, ts: event.ts || Date.now() })
+
+    } else if (event.type === 'task_queued') {
+      // queue depth increases by 1 when a task is queued
+      const sid = event.session_id
+      if (sid) setQueueDepths(prev => {
+        const next = new Map(prev)
+        next.set(sid, (next.get(sid) ?? 0) + 1)
+        return next
+      })
+
+    } else if (event.type === 'queue_change') {
+      const sid = event.session_id
+      if (sid) setQueueDepths(prev => {
+        const next = new Map(prev)
+        const depth = event.queue_depth ?? 0
+        if (depth <= 0) next.delete(sid)
+        else next.set(sid, depth)
+        return next
+      })
+
+    } else if (event.type === 'permission_request') {
+      const sid = event.session_id
+      if (sid) setPendingPermissions(prev => {
+        const next = new Map(prev)
+        next.set(sid, { tool: event.tool, reason: event.reason })
+        return next
+      })
+
+    } else if (event.type === 'permission_resolved') {
+      const sid = event.session_id
+      if (sid) setPendingPermissions(prev => {
+        const next = new Map(prev)
+        next.delete(sid)
+        return next
+      })
+
     } else if (event.type === 'session_end') {
       const sid = event.session_id
       // Clean up any active tasks for this session
@@ -203,6 +257,16 @@ export function useSessionData() {
       })
       setLlmActiveInferred(prev => {
         const next = new Set(prev)
+        next.delete(sid)
+        return next
+      })
+      setPendingPermissions(prev => {
+        const next = new Map(prev)
+        next.delete(sid)
+        return next
+      })
+      setQueueDepths(prev => {
+        const next = new Map(prev)
         next.delete(sid)
         return next
       })
@@ -270,5 +334,5 @@ export function useSessionData() {
     return { ok: false, error: 'network error' }
   }, [])
 
-  return { sessions, activeTasks, llmActive, stats, processes, connected, gatewayHealthy, lastToolEnd, honchoStatus, fetchTools, killSession, renameSession }
+  return { sessions, activeTasks, llmActive, stats, processes, connected, gatewayHealthy, lastToolEnd, lastWorkflowEvent, honchoStatus, pendingPermissions, queueDepths, fetchTools, killSession, renameSession }
 }

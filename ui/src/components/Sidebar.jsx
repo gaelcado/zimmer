@@ -1,15 +1,21 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 
 const SOURCE_COLORS = {
-  cli:      '#155838',
-  telegram: '#38bdf8',
-  discord:  '#818cf8',
-  web:      '#fbbf24',
-  cron:     '#2dd4bf',
-  gateway:  '#71717a',
+  cli:        '#155838',
+  telegram:   '#38bdf8',
+  discord:    '#818cf8',
+  web:        '#fbbf24',
+  cron:       '#2dd4bf',
+  gateway:    '#71717a',
+  signal:     '#2a9c6b',
+  dingtalk:   '#1677ff',
+  sms:        '#f59e0b',
+  mattermost: '#0058cc',
+  matrix:     '#0dbd8b',
+  webhook:    '#8b5cf6',
 }
 
-export default function Sidebar({ sessions, filteredSessions, filter, onFilterChange, selectedId, onSelect, llmActive, sessionActiveTasks, onRename }) {
+export default function Sidebar({ sessions, filteredSessions, filter, onFilterChange, selectedId, onSelect, llmActive, sessionActiveTasks, pendingPermissions, queueDepths, onRename }) {
   const sources = [...new Set(sessions.map(s => s.source).filter(Boolean))].sort()
   const activeCount = sessions.filter(s => !s.ended_at).length
   const lineageRows = useMemo(() => buildLineageRows(filteredSessions), [filteredSessions])
@@ -74,6 +80,8 @@ export default function Sidebar({ sessions, filteredSessions, filter, onFilterCh
               onClick={() => onSelect(row.session.id)}
               isThinking={llmActive?.has(row.session.id)}
               activeToolCount={sessionActiveTasks?.get(row.session.id)?.size ?? 0}
+              pendingPermission={pendingPermissions?.has(row.session.id) ?? false}
+              queueDepth={queueDepths?.get(row.session.id) ?? 0}
               onRename={onRename}
             />
           ))
@@ -211,7 +219,7 @@ export default function Sidebar({ sessions, filteredSessions, filter, onFilterCh
   )
 }
 
-function SessionRow({ session, depth, parent, isSelected, onClick, isThinking, activeToolCount, onRename }) {
+function SessionRow({ session, depth, parent, isSelected, onClick, isThinking, activeToolCount, pendingPermission, queueDepth, onRename }) {
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const [error, setError] = useState(null)
@@ -353,6 +361,12 @@ function SessionRow({ session, depth, parent, isSelected, onClick, isThinking, a
           )}
           {activeToolCount > 0 && (
             <span style={{ color: 'var(--warn)' }}>{activeToolCount} running</span>
+          )}
+          {pendingPermission && (
+            <span className="permission-blink" style={{ color: '#f59e0b' }} title="Awaiting permission approval">🔒</span>
+          )}
+          {queueDepth > 0 && (
+            <span style={{ color: 'var(--text-dim)' }} title={`${queueDepth} task(s) queued`}>+{queueDepth}q</span>
           )}
           {isThinking && (
             <span style={{ color: 'var(--accent)' }}>thinking</span>

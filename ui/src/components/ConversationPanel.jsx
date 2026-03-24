@@ -8,10 +8,12 @@ import { marked } from 'marked'
 import { useToolMeta, toolEmoji } from '../lib/toolMeta.js'
 
 const ROLE_STYLES = {
-  system:    { label: 'SYS',  color: '#71717a' },
-  user:      { label: 'USER', color: 'var(--accent)' },
-  assistant: { label: 'AI',   color: 'var(--ok)' },
-  tool:      { label: 'TOOL', color: 'var(--warn)' },
+  system:     { label: 'SYS',  color: '#71717a' },
+  user:       { label: 'USER', color: 'var(--accent)' },
+  assistant:  { label: 'AI',   color: 'var(--ok)' },
+  tool:       { label: 'TOOL', color: 'var(--warn)' },
+  summary:    { label: 'SUM',  color: '#2dd4bf' },
+  compressed: { label: 'CMP',  color: '#f59e0b' },
 }
 
 export default function ConversationPanel({ sessionId, turns = [], selectedTurn, onSelectTurn }) {
@@ -240,15 +242,33 @@ function TurnRibbon({ subcalls }) {
   )
 }
 
+/** Extract @file:... and @url:... context references from message content.
+ * Returns { chips: [{kind, ref, label}], cleaned: string }
+ */
+function extractContextRefs(content) {
+  const pattern = /@(file|url):([^\s,;)\]]+)/g
+  const chips = []
+  const cleaned = content.replace(pattern, (_, kind, ref) => {
+    const label = kind === 'file'
+      ? ref.split('/').pop() || ref
+      : (() => { try { return new URL(ref).hostname } catch { return ref } })()
+    chips.push({ kind, ref, label })
+    return ''
+  }).replace(/\s{2,}/g, ' ').trim()
+  return { chips, cleaned }
+}
+
 function MessageRow({ msg, nested }) {
   const [collapsed, setCollapsed] = useState(true)
   const roleStyle = ROLE_STYLES[msg.role] ?? ROLE_STYLES.system
-  const content = msg.content || ''
+  const rawContent = msg.content || ''
+  const { chips, cleaned } = useMemo(() => extractContextRefs(rawContent), [rawContent])
+  const content = chips.length > 0 ? cleaned : rawContent
   const time = msg.timestamp ? new Date(msg.timestamp * 1000).toLocaleTimeString() : ''
   const tokenCount = msg.token_count ?? 0
 
   const html = useMemo(() => {
-    if (msg.role !== 'assistant') return null
+    if (msg.role !== 'assistant' && msg.role !== 'summary') return null
     try { return marked.parse(content) } catch { return null }
   }, [content, msg.role])
 
@@ -285,7 +305,30 @@ function MessageRow({ msg, nested }) {
         </div>
       </div>
 
-      {content ? (
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {chips.map((c, i) => (
+            <span
+              key={i}
+              title={c.ref}
+              className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-mono"
+              style={{
+                background: c.kind === 'file'
+                  ? 'color-mix(in oklab, var(--accent) 18%, transparent)'
+                  : 'color-mix(in oklab, #8b5cf6 18%, transparent)',
+                color: c.kind === 'file' ? 'var(--accent)' : '#a78bfa',
+              }}
+            >
+              {c.kind === 'file' ? '📄' : '🔗'} {c.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {msg.role === 'compressed' ? (
+        <p className="text-[11px] italic" style={{ color: 'var(--text-dim)' }}>
+          Context compressed — older messages omitted
+        </p>
+      ) : content ? (
         <>
           {html ? (
             <div

@@ -9,7 +9,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import {
   MagicWand01Icon, FolderCodeIcon, Brain01Icon, User02Icon,
   Settings01Icon, BookOpen01Icon, Add01Icon, Cancel01Icon,
-  Calendar01Icon,
+  Calendar01Icon, ApiIcon,
 } from '@hugeicons/core-free-icons'
 import { marked } from 'marked'
 import Kbd from './Kbd.jsx'
@@ -52,6 +52,7 @@ const TABS = [
   { key: 'config',    label: 'Config',    desc: 'Agent configuration (config.yaml)',         icon: Settings01Icon },
   { key: 'skills',    label: 'Skills',    desc: 'Installed skill catalog',                   icon: BookOpen01Icon },
   { key: 'cron',      label: 'Cron',      desc: 'Scheduled jobs & automation',               icon: Calendar01Icon },
+  { key: 'mcp',       label: 'MCP',       desc: 'Model Context Protocol server configs',      icon: ApiIcon },
 ]
 
 export default function ContextScene() {
@@ -96,6 +97,7 @@ export default function ContextScene() {
         {tab === 'config' && <FileEditor endpoint="/api/context/config" putEndpoint="/api/context/config" label="config.yaml" language="yaml" />}
         {tab === 'skills' && <SkillsBrowser />}
         {tab === 'cron' && <CronPanel />}
+        {tab === 'mcp' && <McpPanel />}
       </div>
     </div>
   )
@@ -1507,6 +1509,150 @@ function HonchoConfig({ content, original, onChange, onSave, saving, saveMsg, pa
             caretColor: 'var(--accent)',
           }}
         />
+      </div>
+    </div>
+  )
+}
+
+// ── McpPanel ──────────────────────────────────────────────────────────────────
+
+function McpPanel() {
+  const [servers, setServers] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [msg, setMsg] = useState(null)
+
+  const load = useCallback(() => {
+    fetch('/api/context/mcp/servers')
+      .then(r => r.json())
+      .then(d => { setServers(d.servers || {}); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const deleteServer = async (name) => {
+    const res = await fetch(`/api/context/mcp/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    const d = await res.json()
+    if (d.ok) {
+      setServers(prev => { const n = { ...prev }; delete n[name]; return n })
+      if (selected === name) setSelected(null)
+      setMsg({ ok: true, text: `Removed "${name}"` })
+    } else {
+      setMsg({ ok: false, text: d.error || 'delete failed' })
+    }
+    setConfirmDelete(null)
+    setTimeout(() => setMsg(null), 3000)
+  }
+
+  const names = Object.keys(servers)
+  const detail = selected ? servers[selected] : null
+
+  if (loading) return (
+    <div className="flex-1 flex items-center justify-center text-[12px]" style={{ color: 'var(--text-dim)' }}>Loading…</div>
+  )
+
+  return (
+    <div className="flex h-full overflow-hidden">
+      {/* Server list */}
+      <div className="w-52 flex-none border-r flex flex-col" style={{ borderColor: 'var(--border)', background: 'var(--panel)' }}>
+        <div className="flex-none flex items-center px-3 h-9 border-b" style={{ borderColor: 'var(--border)' }}>
+          <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
+            MCP Servers {names.length > 0 && <span style={{ color: 'var(--text-dim)' }}>({names.length})</span>}
+          </span>
+        </div>
+        <div className="flex-1 overflow-auto">
+          {names.length === 0 ? (
+            <div className="p-3 text-[11px]" style={{ color: 'var(--text-dim)' }}>
+              No MCP servers configured.<br /><br />
+              Add one with:<br />
+              <code style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>hermes mcp add &lt;name&gt; --url ...</code>
+            </div>
+          ) : names.map(name => {
+            const cfg = servers[name]
+            const enabled = cfg.enabled !== false
+            const isSelected = selected === name
+            return (
+              <button
+                key={name}
+                onClick={() => { setSelected(name); setConfirmDelete(null) }}
+                className="w-full text-left px-3 py-2.5 border-b transition-colors"
+                style={{
+                  borderColor: 'var(--border)',
+                  background: isSelected ? 'color-mix(in oklab, var(--accent) 10%, var(--panel) 90%)' : 'transparent',
+                }}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: enabled ? '#22c55e' : '#3f3f46' }} />
+                  <span className="text-[12px] truncate" style={{ color: isSelected ? 'var(--text)' : 'var(--text-muted)' }}>
+                    {name}
+                  </span>
+                </div>
+                <div className="text-[10px] truncate mt-0.5 ml-3" style={{ color: 'var(--text-dim)' }}>
+                  {cfg.url ? cfg.url.replace(/^https?:\/\//, '') : cfg.command || '?'}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Detail pane */}
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden" style={{ background: 'var(--bg-elev)' }}>
+        {msg && (
+          <div
+            className="flex-none px-3 py-2 text-[11px]"
+            style={{ background: msg.ok ? 'color-mix(in oklab, var(--ok) 15%, transparent)' : 'color-mix(in oklab, #ef4444 15%, transparent)', color: msg.ok ? 'var(--ok)' : '#ef4444' }}
+          >
+            {msg.text}
+          </div>
+        )}
+        {!selected ? (
+          <div className="flex-1 flex items-center justify-center text-[12px]" style={{ color: 'var(--text-dim)' }}>
+            {names.length === 0 ? 'No servers configured' : 'Select a server'}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-auto p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[14px] font-medium" style={{ color: 'var(--text)' }}>{selected}</span>
+              <div className="flex items-center gap-2">
+                {confirmDelete === selected ? (
+                  <>
+                    <button onClick={() => setConfirmDelete(null)} className="text-[11px] px-2 py-1 rounded border" style={{ borderColor: 'var(--border)', color: 'var(--text-dim)' }}>
+                      Cancel
+                    </button>
+                    <button onClick={() => deleteServer(selected)} className="text-[11px] px-2 py-1 rounded" style={{ background: '#ef4444', color: '#fff' }}>
+                      Confirm delete
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setConfirmDelete(selected)} className="text-[11px] px-2 py-1 rounded border" style={{ borderColor: '#ef4444', color: '#ef4444' }}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            {detail && (
+              <div className="space-y-2">
+                {[
+                  ['Transport', detail.url || (detail.command ? `stdio: ${detail.command}${detail.args ? ' ' + detail.args.join(' ') : ''}` : null)],
+                  ['Auth', detail.auth || (detail.headers ? 'header' : 'none')],
+                  ['Status', detail.enabled !== false ? 'enabled' : 'disabled'],
+                  ['Tools', detail.tools ? JSON.stringify(detail.tools) : 'all'],
+                ].filter(([, v]) => v != null).map(([label, value]) => (
+                  <div key={label} className="flex gap-2">
+                    <span className="text-[11px] w-20 flex-none" style={{ color: 'var(--text-dim)' }}>{label}</span>
+                    <span className="text-[11px] font-mono break-all" style={{ color: 'var(--text-muted)' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="pt-2 text-[10px]" style={{ color: 'var(--text-dim)' }}>
+              Edit via <code>hermes mcp configure {selected}</code> or modify <code>config.yaml</code> directly.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
