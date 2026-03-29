@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Real-time orchestration UI for
+  Real-time monitoring UI for
   <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a>.
 </p>
 
@@ -13,7 +13,6 @@ Zimmer lives entirely as a plugin under `~/.hermes/plugins/zimmer` and adds:
 - live monitor + timeline
 - in-app terminal view
 - context/config/skills/cron editors
-- workflow builder + run history
 - gateway hook bridge for richer messaging/gateway telemetry
 
 ## Quick start

@@ -6,7 +6,7 @@ import yaml
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from .. import workflow_store, cron_store
+from .. import skills_store, cron_store
 from .._config import HERMES_HOME
 
 router = APIRouter()
@@ -241,12 +241,12 @@ async def api_mcp_server_delete(name: str):
 
 @router.get("/api/context/skills")
 async def api_context_skills():
-    return workflow_store.list_configured_skills(platform="cli")
+    return skills_store.list_configured_skills(platform="cli")
 
 
 @router.get("/api/context/skills/{skill_name}/content")
 async def api_skill_content(skill_name: str):
-    result = workflow_store.get_skill_content(skill_name)
+    result = skills_store.get_skill_content(skill_name)
     if result is None:
         return {"ok": False, "error": "skill not found"}
     return result
@@ -259,7 +259,7 @@ class SkillToggleBody(BaseModel):
 @router.post("/api/context/skills/{skill_name}/toggle")
 async def api_skill_toggle(skill_name: str, body: SkillToggleBody):
     try:
-        return workflow_store.toggle_skill_disabled(skill_name, body.disabled)
+        return skills_store.toggle_skill_disabled(skill_name, body.disabled)
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

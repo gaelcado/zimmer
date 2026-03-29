@@ -39,7 +39,6 @@ make ui-build
 | `~/.hermes/config.yaml` | Hermes config |
 | `~/.hermes/memories/` | Memory files |
 | `~/.hermes/skills/` | Skills |
-| `~/.hermes/workflows/` | Workflow definitions |
 | `~/.hermes/cron/jobs.json` | Cron jobs |
 | `~/.hermes/logs/` | Log files |
 | `ui/dist/` | Built SPA served by FastAPI |

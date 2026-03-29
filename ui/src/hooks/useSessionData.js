@@ -24,7 +24,6 @@ export function useSessionData() {
   const [connected, setConnected]     = useState(false)
   const [gatewayHealthy, setGatewayHealthy] = useState(false)
   const [lastToolEnd, setLastToolEnd] = useState(null)
-  const [lastWorkflowEvent, setLastWorkflowEvent] = useState(null)
   const [honchoStatus, setHonchoStatus] = useState(null)
   // Map<session_id, {tool, reason}> — sessions with an outstanding permission request
   const [pendingPermissions, setPendingPermissions] = useState(new Map())
@@ -199,12 +198,6 @@ export function useSessionData() {
       setTimeout(loadSessions, 200)
       setTimeout(loadStats, 300)
 
-    } else if (event.type === 'workflow_start' || event.type === 'workflow_step_start' ||
-               event.type === 'workflow_step_done' || event.type === 'workflow_complete' ||
-               event.type === 'workflow_error') {
-      // Notify workflow subscribers (e.g. WorkflowScene polling the run record).
-      setLastWorkflowEvent({ type: event.type, run_id: event.run_id, ts: event.ts || Date.now() })
-
     } else if (event.type === 'task_queued') {
       // queue depth increases by 1 when a task is queued
       const sid = event.session_id
@@ -334,5 +327,5 @@ export function useSessionData() {
     return { ok: false, error: 'network error' }
   }, [])
 
-  return { sessions, activeTasks, llmActive, stats, processes, connected, gatewayHealthy, lastToolEnd, lastWorkflowEvent, honchoStatus, pendingPermissions, queueDepths, fetchTools, killSession, renameSession }
+  return { sessions, activeTasks, llmActive, stats, processes, connected, gatewayHealthy, lastToolEnd, honchoStatus, pendingPermissions, queueDepths, fetchTools, killSession, renameSession }
 }

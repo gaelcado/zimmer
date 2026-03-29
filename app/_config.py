@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 
 import yaml
-from fastapi import Request
 
 
 # ── Paths / env ──────────────────────────────────────────────────────────────
@@ -18,9 +17,6 @@ PROCESSES_PATH = HERMES_HOME / "processes.json"
 LOGS_DIR = HERMES_HOME / "logs"
 UI_DIST = Path(__file__).parent / "ui" / "dist"
 
-WORKFLOW_API_TOKEN = os.getenv("ZIMMER_WORKFLOW_API_TOKEN", "").strip()
-WORKFLOW_RUN_RETENTION_DAYS = float(os.getenv("ZIMMER_WORKFLOW_RUN_RETENTION_DAYS", "14"))
-WORKFLOW_RUN_KEEP_PER_WORKFLOW = int(os.getenv("ZIMMER_WORKFLOW_RUN_KEEP_PER_WORKFLOW", "200"))
 
 MAX_BATCH_RENAME_SESSIONS = 30
 
@@ -87,22 +83,6 @@ def tail_log_lines(path: Path, tail_lines: int, max_scan_bytes: int = 2_000_000)
         lines = lines[-tail_lines:]
     return "\n".join(lines), truncated, len(lines)
 
-
-# ── Auth ──────────────────────────────────────────────────────────────────────
-
-def check_workflow_auth(request: Request) -> dict | None:
-    """Return error dict if auth fails, None if auth passes (or no token configured).
-
-    Reads the token from the environment at call time so that tests can set
-    ZIMMER_WORKFLOW_API_TOKEN via monkeypatch.setenv without a module reload.
-    """
-    token = os.getenv("ZIMMER_WORKFLOW_API_TOKEN", "").strip()
-    if not token:
-        return None
-    incoming = (request.headers.get("x-zimmer-token") or "").strip()
-    if incoming == token:
-        return None
-    return {"ok": False, "error": "unauthorized"}
 
 
 # ── Async helpers ─────────────────────────────────────────────────────────────

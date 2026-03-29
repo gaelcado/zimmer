@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ActivitySparkIcon, CommandLineIcon, FolderOpenIcon,
-  ListViewIcon, HierarchyCircle01Icon, BookOpen01Icon,
+  ListViewIcon, BookOpen01Icon,
   Moon01Icon, Sun01Icon,
 } from '@hugeicons/core-free-icons'
 import Kbd from './Kbd.jsx'
@@ -11,7 +11,6 @@ const SCENES = [
   { key: 'terminal', label: 'Terminal', hotkey: '2', icon: CommandLineIcon },
   { key: 'context',  label: 'Context',  hotkey: '3', icon: FolderOpenIcon },
   { key: 'logs',     label: 'Logs',     hotkey: '4', icon: ListViewIcon },
-  { key: 'workflow', label: 'Workflow', hotkey: '5', icon: HierarchyCircle01Icon },
 ]
 
 export default function StatsBar({
@@ -71,7 +70,7 @@ export default function StatsBar({
           onClick={onOpenAskDocs}
           className="px-2.5 py-1 rounded text-[11px] transition-colors flex items-center gap-1.5"
           style={{ color: 'var(--text-dim)' }}
-          title="Ask Docs (6)"
+          title="Ask Docs (5)"
         >
           <HugeiconsIcon icon={BookOpen01Icon} size={12} color="currentColor" />
           Ask Docs

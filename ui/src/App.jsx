@@ -13,16 +13,15 @@ import ConversationPanel from './components/ConversationPanel.jsx'
 import CommandPalette from './components/CommandPalette.jsx'
 import ContextScene from './components/ContextScene.jsx'
 import LogsScene from './components/LogsScene.jsx'
-import WorkflowScene from './components/WorkflowScene.jsx'
 import { useSessionData } from './hooks/useSessionData.js'
 import { buildTurnGroups } from './lib/turns.js'
 
-const SCENE_ORDER = ['monitor', 'terminal', 'context', 'logs', 'workflow']
+const SCENE_ORDER = ['monitor', 'terminal', 'context', 'logs']
 const ASK_DOCS_URL = 'https://deepwiki.com/NousResearch/hermes-agent'
 const AGENT_DELEGATE_TOOLS = new Set(['spawn_agent', 'run_agent', 'call_agent', 'delegate_agent'])
 
 export default function App() {
-  const { sessions, activeTasks, llmActive, stats, processes, connected, gatewayHealthy, lastToolEnd, lastWorkflowEvent, honchoStatus, pendingPermissions, queueDepths, fetchTools, killSession, renameSession } = useSessionData()
+  const { sessions, activeTasks, llmActive, stats, processes, connected, gatewayHealthy, lastToolEnd, honchoStatus, pendingPermissions, queueDepths, fetchTools, killSession, renameSession } = useSessionData()
   const [scene, setScene] = useState('monitor')
   const [theme, setTheme] = useState(() => localStorage.getItem('zimmer_theme') || 'dark')
   const [lineageFocus, setLineageFocus] = useState(() => localStorage.getItem('zimmer_lineage_focus') || 'all')
@@ -216,8 +215,7 @@ export default function App() {
       else if (e.key === '2') setScene('terminal')
       else if (e.key === '3') setScene('context')
       else if (e.key === '4') setScene('logs')
-      else if (e.key === '5') setScene('workflow')
-      else if (e.key === '6') openAskDocs()
+      else if (e.key === '5') openAskDocs()
       else if (e.key === 'v') setMonitorView(prev => prev === 'tree' ? 'list' : 'tree')
       else if (e.key === 't') setTheme(prev => prev === 'dark' ? 'light' : 'dark')
       else if (e.key === 'f') setLineageFocus(prev => prev === 'all' ? 'branch' : 'all')
@@ -246,8 +244,7 @@ export default function App() {
     { id: 'scene-terminal', label: 'Open Terminal', hint: '2', run: () => setScene('terminal') },
     { id: 'scene-context', label: 'Open Context Editor', hint: '3', run: () => setScene('context') },
     { id: 'scene-logs', label: 'Open Logs', hint: '4', run: () => setScene('logs') },
-    { id: 'scene-workflow', label: 'Open Workflow Builder', hint: '5', run: () => setScene('workflow') },
-    { id: 'open-ask-docs', label: 'Open Ask Docs', hint: '6', run: openAskDocs },
+    { id: 'open-ask-docs', label: 'Open Ask Docs', hint: '5', run: openAskDocs },
     { id: 'toggle-view', label: `Switch to ${monitorView === 'tree' ? 'List' : 'Tree'} View`, hint: 'V', run: () => setMonitorView(v => v === 'tree' ? 'list' : 'tree') },
     { id: 'toggle-theme', label: `Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Theme`, hint: 'T', run: () => setTheme(prev => prev === 'dark' ? 'light' : 'dark') },
     { id: 'toggle-focus', label: `Lineage Focus: ${lineageFocus === 'all' ? 'Branch' : 'All'}`, hint: 'F', run: () => setLineageFocus(prev => prev === 'all' ? 'branch' : 'all') },
@@ -381,18 +378,6 @@ export default function App() {
             </motion.div>
           )}
 
-          {scene === 'workflow' && (
-            <motion.div
-              key="scene-workflow"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.22 }}
-              className="h-full"
-            >
-              <WorkflowScene lastWorkflowEvent={lastWorkflowEvent} />
-            </motion.div>
-          )}
 
         </AnimatePresence>
 

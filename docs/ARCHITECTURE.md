@@ -9,10 +9,8 @@
 | `event_bus.py` | Thread-safe sync->async event bridge for SSE subscribers. |
 | `server.py` | FastAPI app factory + router wiring + static SPA serving from `ui/dist/`. |
 | `state_reader.py` | Read-only SQLite queries against `~/.hermes/state.db`. |
-| `workflow_store.py` | Workflow persistence + skill discovery + run records. |
-| `workflow_engine.py` | Workflow validation and execution planning. |
 | `cron_store.py` | Cron jobs read/write (`~/.hermes/cron/jobs.json`). |
-| `routes/*.py` | API endpoints (sessions, events, logs, context, workflows, terminal, honcho). |
+| `routes/*.py` | API endpoints (sessions, events, logs, context, terminal, honcho). |
 
 ## Frontend (React + Vite)
 

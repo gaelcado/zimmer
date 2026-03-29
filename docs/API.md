@@ -67,26 +67,6 @@ PUT    /context/mcp/servers/{name}
 DELETE /context/mcp/servers/{name}
 ```
 
-## Workflows
-
-```
-GET    /workflows
-GET    /workflows/auth
-POST   /workflows
-POST   /workflows/import
-GET    /workflows/{id}
-PUT    /workflows/{id}
-GET    /workflows/{id}/export
-GET    /workflows/{id}/validate
-GET    /workflows/skills?platform=cli
-POST   /workflows/{id}/run
-GET    /workflows/runs
-GET    /workflows/runs/metrics
-POST   /workflows/runs/cleanup
-GET    /workflows/runs/{run_id}
-POST   /workflows/runs/{run_id}/cancel
-```
-
 ## Honcho
 
 ```

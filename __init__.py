@@ -1,4 +1,4 @@
-"""Hermes Zimmer plugin — DAW-style agent orchestration monitor."""
+"""Hermes Zimmer plugin — DAW-style agent monitor."""
 
 import asyncio
 import json

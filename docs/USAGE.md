@@ -8,8 +8,7 @@
 | 2 | **Terminal** | `2` | In-app PTY shell over WebSocket |
 | 3 | **Context** | `3` | Soul, Workspace, Memories, Honcho, Config, Skills, Cron editors |
 | 4 | **Logs** | `4` | `~/.hermes/logs` browser with tail controls |
-| 5 | **Workflow** | `5` | Visual workflow builder (`~/.hermes/workflows/*.yaml`) |
-| 6 | **Ask Docs** | `6` | Opens DeepWiki for Hermes Agent in a new tab |
+| 5 | **Ask Docs** | `5` | Opens DeepWiki for Hermes Agent in a new tab |
 
 `Tab` cycles scenes.
 
@@ -17,7 +16,7 @@
 
 | Key | Action |
 |-----|--------|
-| `1` – `6` | Jump to scene (6 opens external docs) |
+| `1` – `5` | Jump to scene (5 opens external docs) |
 | `Tab` | Cycle scenes |
 | `v` | Toggle monitor view (List / Tree) |
 | `f` | Toggle lineage focus mode |
@@ -70,20 +69,3 @@ Zimmer installs a gateway hook companion at `~/.hermes/hooks/zimmer_gateway_brid
 - Lists files under `~/.hermes/logs`
 - Tail sizes: 200 / 800 / 2000
 - Auto-refresh every ~3s
-
-## Workflow scene
-
-Storage: `~/.hermes/workflows/*.yaml`
-
-Highlights:
-- skill picker + filters
-- DAG validation (cycle detection)
-- dry-run, retries/backoff, cancel, run history
-- YAML import/export
-- stale running runs auto-reconciled to interrupted
-
-Optional write protection:
-
-```bash
-export ZIMMER_WORKFLOW_API_TOKEN="your-secret-token"
-```
