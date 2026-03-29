@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+
+# UI build/deps
+ui/node_modules/
+ui/dist/
+ui/.pytest_cache/
+
+# Env / secrets
+.env
+.env.*
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Stray assets
+image copy.png
+
+# Markdown files (except README)
+*.md
+!README.md

@@ -1,0 +1,12 @@
+name: zimmer_gateway_bridge
+description: "Bridge gateway lifecycle events into Zimmer live event bus"
+events:
+  - session:start
+  - session:end
+  - session:reset
+  - agent:start
+  - agent:step
+  - agent:end
+  - command:queue
+  - command:approve
+  - command:deny
