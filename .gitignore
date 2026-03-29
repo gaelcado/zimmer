@@ -20,10 +20,3 @@ ui/.pytest_cache/
 Thumbs.db
 .idea/
 .vscode/
-
-# Stray assets
-image copy.png
-
-# Markdown files (except README)
-*.md
-!README.md
